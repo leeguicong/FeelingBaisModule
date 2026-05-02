@@ -1,17 +1,20 @@
+import torch.nn as nn
 from src.models.samba_block import SambaBlock
 
 
-class IdentityTemporalAdapter:
-    def __call__(self, z, masks_enc=None):
+class IdentityTemporalAdapter(nn.Module):
+    def forward(self, z, masks_enc=None):
         return z
 
 
-class SambaTemporalAdapter:
+class SambaTemporalAdapter(nn.Module):
     def __init__(self, dim: int, depth: int, block_cfg: dict):
-        self.blocks = [SambaBlock(dim=dim, **block_cfg) for _ in range(depth)]
+        super().__init__()
+        self.blocks = nn.ModuleList([SambaBlock(dim=dim, **block_cfg) for _ in range(depth)])
+        self.norm = nn.LayerNorm(dim)
 
-    def __call__(self, z, masks_enc=None):
+    def forward(self, z, masks_enc=None):
         x = z
         for blk in self.blocks:
             x = blk(x)
-        return x
+        return self.norm(x)

@@ -1,4 +1,3 @@
-
 class SuspensionHead:
     def forward(self, x):
         raise NotImplementedError
