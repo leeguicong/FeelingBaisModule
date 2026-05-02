@@ -1,9 +1,17 @@
-from importlib import import_module
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+import importlib
+import logging
+import sys
+
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+logger = logging.getLogger()
 
 
-def run_app(cfg):
-    app_name = cfg.get("app")
-    if not app_name:
-        raise ValueError("Config must include 'app'.")
-    module = import_module(f"app.{app_name}.train")
-    module.main(cfg)
+def main(app, args, resume_preempt=False):
+
+    logger.info(f"Running pre-training of app: {app}")
+    return importlib.import_module(f"app.{app}.train").main(args=args, resume_preempt=resume_preempt)

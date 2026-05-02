@@ -1,60 +1,84 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
 import argparse
-import ast
+import multiprocessing as mp
+import pprint
+from pathlib import Path
 
-from app.scaffold import run_app
+import yaml
 
+from app.scaffold import main as app_main
+from src.utils.distributed import init_distributed
 
-def _parse_scalar(value: str):
-    v = value.strip()
-    if v.lower() in {"true", "false"}:
-        return v.lower() == "true"
-    if v in {"{}", "[]"}:
-        return ast.literal_eval(v)
-    if v.startswith("[") and v.endswith("]"):
-        return ast.literal_eval(v)
-    try:
-        if any(ch in v for ch in [".", "e", "E"]):
-            return float(v)
-        return int(v)
-    except ValueError:
-        return v
-
-
-def simple_yaml_load(path: str):
-    root = {}
-    stack = [(0, root)]
-    with open(path, "r", encoding="utf-8") as f:
-        for raw_line in f:
-            if not raw_line.strip() or raw_line.strip().startswith("#"):
-                continue
-            indent = len(raw_line) - len(raw_line.lstrip(" "))
-            line = raw_line.strip()
-            key, _, rest = line.partition(":")
-            key = key.strip()
-            rest = rest.strip()
-
-            while stack and indent < stack[-1][0]:
-                stack.pop()
-            parent = stack[-1][1]
-            if rest == "":
-                parent[key] = {}
-                stack.append((indent + 2, parent[key]))
-            else:
-                parent[key] = _parse_scalar(rest)
-    return root
+parser = argparse.ArgumentParser()
+parser.add_argument("--fname", type=str, help="name of config file to load", default="configs.yaml")
+parser.add_argument(
+    "--devices",
+    type=str,
+    nargs="+",
+    default=["cuda:0", "cuda:1", "cuda:2", "cuda:3", "cuda:4", "cuda:5", "cuda:6", "cuda:7"],
+    help="which devices to use on local machine",
+)
+parser.add_argument(
+    "--debugmode",
+    type=bool,
+    default=False,
+    help="Setting this to true will not spin up new processes. "
+    "The main code runs the main process, which makes it easier to \
+    debug with checkpointing.",
+)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Run JEPA app")
-    parser.add_argument("--fname", required=True, help="Path to YAML config")
-    return parser.parse_args()
+def process_main(rank, fname, world_size, devices):
+    import os
 
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(devices[rank].split(":")[-1])
 
-def main():
-    args = parse_args()
-    cfg = simple_yaml_load(args.fname)
-    run_app(cfg)
+    import logging
+
+    from src.utils.logging import get_logger
+
+    logger = get_logger(force=True)
+    if rank == 0:
+        logger.setLevel(logging.INFO)
+    else:
+        logger.setLevel(logging.ERROR)
+
+    logger.info(f"called-params {fname}")
+
+    # Load config
+    params = None
+    with open(fname, "r") as y_file:
+        params = yaml.load(y_file, Loader=yaml.FullLoader)
+        logger.info("loaded params...")
+
+    # Log config
+    if rank == 0:
+        pprint.PrettyPrinter(indent=4).pprint(params)
+        folder = params["folder"]
+        params_path = os.path.join(folder, "params-pretrain.yaml")
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        with open(params_path, "w") as f:
+            yaml.dump(params, f)
+
+    # Init distributed (access to comm between GPUS on same machine)
+    world_size, rank = init_distributed(rank_and_world_size=(rank, world_size))
+    logger.info(f"Running... (rank: {rank}/{world_size})")
+
+    # Launch the app with loaded config
+    app_main(params["app"], args=params)
 
 
 if __name__ == "__main__":
-    main()
+    args = parser.parse_args()
+    if args.debugmode:
+        process_main(rank=0, fname=args.fname, world_size=1, devices=["cuda:0"])
+    else:
+        num_gpus = len(args.devices)
+        mp.set_start_method("spawn")
+        for rank in range(num_gpus):
+            mp.Process(target=process_main, args=(rank, args.fname, num_gpus, args.devices)).start()
