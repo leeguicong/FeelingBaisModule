@@ -1,0 +1,29 @@
+app: vjepa_suspension
+
+model:
+  model_name: vit_large
+  pred_depth: 12
+  pred_embed_dim: 384
+  pred_num_heads: 12
+  use_mask_tokens: true
+  use_rope: true
+  temporal_adapter: samba
+  temporal_depth: 2
+  temporal_block_cfg: {}
+
+loss:
+  loss_exp: 1.0
+
+mask:
+  num_blocks: 2
+  spatial_scale: [0.15, 0.8]
+  temporal_scale: [0.15, 1.0]
+
+optimization:
+  epochs: 1
+  lr: 1.0e-4
+
+data:
+  frames: 16
+  image_size: 256
+  patch_size: 16
