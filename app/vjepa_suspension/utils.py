@@ -227,6 +227,7 @@ def init_opt(
     is_anneal,
     encoder,
     predictor,
+    temporal_adapter,
     iterations_per_epoch,
     start_lr,
     ref_lr,
@@ -244,6 +245,7 @@ def init_opt(
     param_groups = [
         {"params": (p for n, p in encoder.named_parameters() if ("bias" not in n) and (len(p.shape) != 1))},
         {"params": (p for n, p in predictor.named_parameters() if ("bias" not in n) and (len(p.shape) != 1))},
+        {"params": (p for n, p in temporal_adapter.named_parameters() if ("bias" not in n) and (len(p.shape) != 1))},
         {
             "params": (p for n, p in encoder.named_parameters() if ("bias" in n) or (len(p.shape) == 1)),
             "WD_exclude": zero_init_bias_wd,
@@ -251,6 +253,11 @@ def init_opt(
         },
         {
             "params": (p for n, p in predictor.named_parameters() if ("bias" in n) or (len(p.shape) == 1)),
+            "WD_exclude": zero_init_bias_wd,
+            "weight_decay": 0,
+        },
+        {
+            "params": (p for n, p in temporal_adapter.named_parameters() if ("bias" in n) or (len(p.shape) == 1)),
             "WD_exclude": zero_init_bias_wd,
             "weight_decay": 0,
         },

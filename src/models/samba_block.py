@@ -2,7 +2,11 @@ import torch.nn as nn
 
 
 class SambaBlock(nn.Module):
-    """Minimal extracted Samba-like mixer block for sequence tokens."""
+    """Placeholder temporal MLP block (NOT full Samba/Mamba implementation).
+
+This class only provides a trainable temporal transform hook for stage-1
+integration. It intentionally does not include Samba's mamba/selective-scan core.
+"""
 
     def __init__(self, dim: int, hidden_mult: int = 2, dropout: float = 0.0, **kwargs):
         super().__init__()

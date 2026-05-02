@@ -277,6 +277,7 @@ def main(args, resume_preempt=False):
         is_anneal=is_anneal,
         encoder=encoder,
         predictor=predictor,
+        temporal_adapter=temporal_adapter,
         wd=wd,
         final_wd=final_wd,
         start_lr=start_lr,
@@ -292,6 +293,7 @@ def main(args, resume_preempt=False):
     )
     encoder = DistributedDataParallel(encoder, static_graph=True)
     predictor = DistributedDataParallel(predictor, static_graph=False, find_unused_parameters=True)
+    temporal_adapter = DistributedDataParallel(temporal_adapter, static_graph=False, find_unused_parameters=True)
     target_encoder = DistributedDataParallel(target_encoder)
     for p in target_encoder.parameters():
         p.requires_grad = False
@@ -321,6 +323,12 @@ def main(args, resume_preempt=False):
             scaler=scaler,
             is_anneal=is_anneal and not resume_anneal,
         )
+        try:
+            checkpoint = torch.load(load_path, map_location=torch.device("cpu"))
+            if "temporal_adapter" in checkpoint:
+                temporal_adapter.load_state_dict(checkpoint["temporal_adapter"])
+        except Exception:
+            logger.warning("temporal_adapter state not restored from checkpoint; continuing.")
         if not is_anneal or resume_anneal:
             for _ in range(start_epoch * ipe):
                 scheduler.step()
@@ -337,6 +345,7 @@ def main(args, resume_preempt=False):
             "opt": optimizer.state_dict(),
             "scaler": None if scaler is None else scaler.state_dict(),
             "target_encoder": target_encoder.state_dict(),
+            "temporal_adapter": temporal_adapter.state_dict(),
             "epoch": epoch,
             "loss": loss_meter.avg,
             "batch_size": batch_size,
@@ -372,6 +381,10 @@ def main(args, resume_preempt=False):
     # -- TRAINING LOOP
     for epoch in range(start_epoch, num_epochs):
         logger.info("Epoch %d" % (epoch + 1))
+        encoder.train()
+        predictor.train()
+        temporal_adapter.train()
+        target_encoder.eval()
 
         loss_meter = AverageMeter()
         mask_meters = {fpc: AverageMeter() for fpc in dataset_fpcs}
@@ -435,6 +448,7 @@ def main(args, resume_preempt=False):
 
                 def forward_context(c):
                     z = encoder(c, masks_enc)
+                    z = temporal_adapter(z, masks_enc=masks_enc)
                     z = predictor(z, masks_enc, masks_pred)
                     return z
 
